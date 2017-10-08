@@ -24,6 +24,36 @@ endef
 
 $(eval $(call KernelPackage,sound-arm-bcm2835))
 
+define KernelPackage/sound-soc-bcm2708-i2s
+  TITLE:=SoC Audio support for the Broadcom 2708 I2S (es9023)
+  KCONFIG:= \
+	CONFIG_BCM2708_SPIDEV=y \
+	CONFIG_SND_BCM2708_SOC_I2S \
+	CONFIG_SND_BCM2708_SOC_ES9023_DAC \
+	CONFIG_SND_BCM2708_SOC_HIFIBERRY_DAC=n \
+	CONFIG_SND_BCM2708_SOC_HIFIBERRY_DACPLUS=n \
+	CONFIG_SND_BCM2708_SOC_HIFIBERRY_DIGI=n \
+	CONFIG_SND_BCM2708_SOC_HIFIBERRY_AMP=n \
+	CONFIG_SND_BCM2708_SOC_RPI_DAC=n \
+	CONFIG_SND_BCM2708_SOC_IQAUDIO_DAC=n \
+	CONFIG_SND_SOC_DMAENGINE_PCM=y \
+	CONFIG_SND_SOC_GENERIC_DMAENGINE_PCM=y
+  FILES:= \
+	$(LINUX_DIR)/drivers/base/regmap/regmap-mmio.ko \
+	$(LINUX_DIR)/sound/soc/bcm/snd-soc-bcm2708-i2s.ko \
+	$(LINUX_DIR)/sound/soc/codecs/snd-soc-es9023.ko \
+	$(LINUX_DIR)/sound/soc/bcm/snd-soc-es9023-dac.ko
+  AUTOLOAD:=$(call AutoLoad,68,snd-soc-bcm2708-i2s snd-soc-es9023 snd-soc-es9023-dac)
+  DEPENDS:=@TARGET_brcm2708 +kmod-regmap +kmod-sound-soc-core
+  $(call AddDepends/sound)
+endef
+
+define KernelPackage/sound-soc-bcm2708-i2s/description
+  This package contains support for codecs attached to the Broadcom 2708 I2S interface
+endef
+
+$(eval $(call KernelPackage,sound-soc-bcm2708-i2s))
+
 define KernelPackage/random-bcm2708
   SUBMENU:=$(OTHER_MENU)
   TITLE:=BCM2708 H/W Random Number Generator

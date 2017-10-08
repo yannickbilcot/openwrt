@@ -1,0 +1,262 @@
+--- a/arch/arm/mach-bcm2708/bcm2708.c
++++ b/arch/arm/mach-bcm2708/bcm2708.c
+@@ -733,6 +733,20 @@ static struct i2c_board_info __initdata
+ };
+ #endif
+ 
++#if defined(CONFIG_SND_BCM2708_SOC_ES9023_DAC) || defined(CONFIG_SND_BCM2708_SOC_ES9023_DAC_MODULE)
++static struct platform_device snd_es9023_dac_device = {
++	.name = "snd-es9023-dac",
++	.id = 0,
++	.num_resources = 0,
++};
++
++static struct platform_device snd_es9023_codec_device = {
++	.name = "es9023-codec",
++	.id = -1,
++	.num_resources = 0,
++};
++#endif
++
+ int __init bcm_register_device(struct platform_device *pdev)
+ {
+ 	int ret;
+@@ -933,6 +947,11 @@ void __init bcm2708_init(void)
+ #endif
+ 
+ 
++#if defined(CONFIG_SND_BCM2708_SOC_ES9023_DAC) || defined(CONFIG_SND_BCM2708_SOC_ES9023_DAC_MODULE)
++	bcm_register_device(&snd_es9023_dac_device);
++	bcm_register_device(&snd_es9023_codec_device);
++#endif
++
+ 	for (i = 0; i < ARRAY_SIZE(amba_devs); i++) {
+ 		struct amba_device *d = amba_devs[i];
+ 		amba_device_register(d, &iomem_resource);
+--- a/sound/soc/bcm/Kconfig
++++ b/sound/soc/bcm/Kconfig
+@@ -60,3 +60,10 @@ config SND_BCM2708_SOC_IQAUDIO_DAC
+ 	select SND_SOC_PCM512x_I2C
+ 	help
+ 	  Say Y or M if you want to add support for IQaudIO-DAC.
++
++config SND_BCM2708_SOC_ES9023_DAC
++	tristate "Support for ES9023-DAC"
++	depends on SND_BCM2708_SOC_I2S
++	select SND_SOC_ES9023
++	help
++	Say Y or M if you want to add support for ES9023-DAC
+--- a/sound/soc/bcm/Makefile
++++ b/sound/soc/bcm/Makefile
+@@ -15,6 +15,7 @@ snd-soc-hifiberry-digi-objs := hifiberry
+ snd-soc-hifiberry-amp-objs := hifiberry_amp.o
+ snd-soc-rpi-dac-objs := rpi-dac.o
+ snd-soc-iqaudio-dac-objs := iqaudio-dac.o
++snd-soc-es9023-dac-objs := es9023-dac.o
+ 
+ obj-$(CONFIG_SND_BCM2708_SOC_HIFIBERRY_DAC) += snd-soc-hifiberry-dac.o
+ obj-$(CONFIG_SND_BCM2708_SOC_HIFIBERRY_DACPLUS) += snd-soc-hifiberry-dacplus.o
+@@ -22,3 +23,4 @@ obj-$(CONFIG_SND_BCM2708_SOC_HIFIBERRY_D
+ obj-$(CONFIG_SND_BCM2708_SOC_HIFIBERRY_AMP) += snd-soc-hifiberry-amp.o
+ obj-$(CONFIG_SND_BCM2708_SOC_RPI_DAC) += snd-soc-rpi-dac.o
+ obj-$(CONFIG_SND_BCM2708_SOC_IQAUDIO_DAC) += snd-soc-iqaudio-dac.o
++obj-$(CONFIG_SND_BCM2708_SOC_ES9023_DAC) += snd-soc-es9023-dac.o
+--- /dev/null
++++ b/sound/soc/bcm/es9023-dac.c
+@@ -0,0 +1,97 @@
++/*
++ * ASoC Driver for ES9023 DAC.
++ *
++ * Author:	Yannick Bilcot <yannick.bilcot@gmail.com>
++ *		Copyright 2013
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * version 2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ */
++
++#include <linux/module.h>
++#include <linux/platform_device.h>
++
++#include <sound/core.h>
++#include <sound/pcm.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include <sound/jack.h>
++
++static int snd_rpi_es9023_dac_init(struct snd_soc_pcm_runtime *rtd)
++{
++	return 0;
++}
++
++static int snd_rpi_es9023_dac_hw_params(struct snd_pcm_substream *substream,
++				       struct snd_pcm_hw_params *params)
++{
++	struct snd_soc_pcm_runtime *rtd = substream->private_data;
++	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
++
++	return snd_soc_dai_set_bclk_ratio(cpu_dai, 32*2);
++}
++
++/* machine stream operations */
++static struct snd_soc_ops snd_rpi_es9023_dac_ops = {
++	.hw_params = snd_rpi_es9023_dac_hw_params,
++};
++
++static struct snd_soc_dai_link snd_rpi_es9023_dac_dai[] = {
++{
++	.name		= "HiFimeDIY ES9023",
++	.stream_name	= "HiFimeDIY ES9023",
++	.cpu_dai_name	= "bcm2708-i2s.0",
++	.codec_dai_name	= "es9023-hifi",
++	.platform_name	= "bcm2708-i2s.0",
++	.codec_name		= "es9023-codec",
++	.dai_fmt	= SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
++				SND_SOC_DAIFMT_CBS_CFS,
++	.ops		= &snd_rpi_es9023_dac_ops,
++	.init		= snd_rpi_es9023_dac_init,
++},
++};
++
++/* audio machine driver */
++static struct snd_soc_card snd_rpi_es9023_dac = {
++	.name         = "snd_rpi_es9023_dac",
++	.dai_link     = snd_rpi_es9023_dac_dai,
++	.num_links    = ARRAY_SIZE(snd_rpi_es9023_dac_dai),
++};
++
++static int snd_rpi_es9023_dac_probe(struct platform_device *pdev)
++{
++	int ret = 0;
++
++	snd_rpi_es9023_dac.dev = &pdev->dev;
++	ret = snd_soc_register_card(&snd_rpi_es9023_dac);
++	if (ret)
++		dev_err(&pdev->dev, "snd_soc_register_card() failed: %d\n", ret);
++
++	return ret;
++}
++
++static int snd_rpi_es9023_dac_remove(struct platform_device *pdev)
++{
++	return snd_soc_unregister_card(&snd_rpi_es9023_dac);
++}
++
++static struct platform_driver snd_rpi_es9023_dac_driver = {
++        .driver = {
++                .name   = "snd-es9023-dac",
++                .owner  = THIS_MODULE,
++        },
++        .probe          = snd_rpi_es9023_dac_probe,
++        .remove         = snd_rpi_es9023_dac_remove,
++};
++
++module_platform_driver(snd_rpi_es9023_dac_driver);
++
++MODULE_AUTHOR("Yannick Bilcot <yannick.bilcot@gmail.com>");
++MODULE_DESCRIPTION("ASoC Driver for ES9023 DAC");
++MODULE_LICENSE("GPL v2");
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -61,6 +61,7 @@ config SND_SOC_ALL_CODECS
+ 	select SND_SOC_BT_SCO
+ 	select SND_SOC_ES8328_SPI if SPI_MASTER
+ 	select SND_SOC_ES8328_I2C if I2C
++	select SND_SOC_ES9023
+ 	select SND_SOC_ISABELLE if I2C
+ 	select SND_SOC_JZ4740_CODEC
+ 	select SND_SOC_LM4857 if I2C
+@@ -428,6 +429,9 @@ config SND_SOC_ES8328_SPI
+ 	tristate
+ 	select SND_SOC_ES8328
+ 
++config SND_SOC_ES9023
++	tristate
++
+ config SND_SOC_ISABELLE
+         tristate
+ 
+--- a/sound/soc/codecs/Makefile
++++ b/sound/soc/codecs/Makefile
+@@ -53,6 +53,7 @@ snd-soc-dmic-objs := dmic.o
+ snd-soc-es8328-objs := es8328.o
+ snd-soc-es8328-i2c-objs := es8328-i2c.o
+ snd-soc-es8328-spi-objs := es8328-spi.o
++snd-soc-es9023-objs := es9023.o
+ snd-soc-isabelle-objs := isabelle.o
+ snd-soc-jz4740-codec-objs := jz4740.o
+ snd-soc-l3-objs := l3.o
+@@ -232,6 +233,7 @@ obj-$(CONFIG_SND_SOC_DMIC)	+= snd-soc-dm
+ obj-$(CONFIG_SND_SOC_ES8328)	+= snd-soc-es8328.o
+ obj-$(CONFIG_SND_SOC_ES8328_I2C)+= snd-soc-es8328-i2c.o
+ obj-$(CONFIG_SND_SOC_ES8328_SPI)+= snd-soc-es8328-spi.o
++obj-$(CONFIG_SND_SOC_ES9023)	+= snd-soc-es9023.o
+ obj-$(CONFIG_SND_SOC_ISABELLE)	+= snd-soc-isabelle.o
+ obj-$(CONFIG_SND_SOC_JZ4740_CODEC)	+= snd-soc-jz4740-codec.o
+ obj-$(CONFIG_SND_SOC_L3)	+= snd-soc-l3.o
+--- /dev/null
++++ b/sound/soc/codecs/es9023.c
+@@ -0,0 +1,58 @@
++/*
++* Driver for the ES9023 codec
++* It is a dummy driver without any controls.
++*
++* Copyright 2013 Yannick Bilcot <yannick.bilcot@gmail.com>
++*
++* This program is free software; you can redistribute it and/or modify it
++* under the terms of the GNU General Public License as published by the
++* Free Software Foundation; either version 2 of the License, or (at your
++* option) any later version.
++*
++*/
++
++#include <linux/init.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++
++#include <sound/soc.h>
++
++static struct snd_soc_dai_driver es9023_dai = {
++        .name = "es9023-hifi",
++        .playback = {
++                .channels_min = 2,
++                .channels_max = 2,
++                .rates = SNDRV_PCM_RATE_8000_192000,
++                .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE
++        },
++};
++
++static struct snd_soc_codec_driver soc_codec_dev_es9023;
++
++static int es9023_probe(struct platform_device *pdev)
++{
++        return snd_soc_register_codec(&pdev->dev, &soc_codec_dev_es9023,
++                        &es9023_dai, 1);
++}
++
++static int es9023_remove(struct platform_device *pdev)
++{
++        snd_soc_unregister_codec(&pdev->dev);
++
++        return 0;
++}
++
++static struct platform_driver es9023_codec_driver = {
++        .probe  = es9023_probe,
++        .remove = es9023_remove,
++        .driver = {
++                .name = "es9023-codec",
++                .owner = THIS_MODULE,
++        },
++};
++
++module_platform_driver(es9023_codec_driver);
++
++MODULE_AUTHOR("Yannick Bilcot <yannick.bilcot@gmail.com>");
++MODULE_DESCRIPTION("ASoC ES9023 codec driver");
++MODULE_LICENSE("GPL");
